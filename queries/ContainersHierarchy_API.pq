@@ -4,12 +4,13 @@
 //  Paste into Power BI → Home → Transform Data → New Blank Query →
 //  Advanced Editor.
 //
-//  Pulls containers and packages directly from the GTP Stratus REST
-//  API, then builds a FLAT display table:
+//  Pulls containers from the GTP Stratus REST API and references
+//  the existing "Packages" query (Synapse) for package data.
+//  Builds a FLAT display table:
 //    EffectiveDisplayParent ▸ AreaRow ▸ Rack ▸ Shelf ▸
 //    ChildContainer ▸ Package
 //
-//  No dependency on existing model tables.
+//  Depends on: existing "Packages" query in the model.
 // =====================================================================
 let
     // ─── Configuration ──────────────────────────────────────────────
@@ -83,17 +84,22 @@ let
         ]
     ),
 
-    // ─── 2.  Load all packages ──────────────────────────────────────
-    RawPackages   = FetchAllPages("/v1/package", 200),
-    PackagesTable = Table.FromRecords(
-        List.Transform(RawPackages, each Record.SelectFields(_, {
-            "id", "name", "statusName", "currentTrackingStatusId"
-        })),
-        type table [
-            id = nullable text, name = nullable text,
-            statusName = nullable text,
-            currentTrackingStatusId = nullable text
-        ]
+    // ─── 2.  Reference existing Packages query ──────────────────────
+    //  The model's "Packages" query (from Synapse) already has all
+    //  package data.  "PackageContainer.1" gives the parent container name.
+    //  "PackageContainer.2" (if present) gives the child container name.
+    //  IMPORTANT: "Status_" = tracking status name (e.g. Shipped, etc.)
+    //             "Status"  = lifecycle status (Active / Archived)
+    _PkgRaw = Table.SelectColumns(Packages, {
+        "Id", "Name", "Status", "Status_", "PackageTrackingStatusId",
+        "PackageContainer.1", "PackageContainer.2"
+    }),
+    // Keep only Active packages
+    _PkgActive = Table.SelectRows(_PkgRaw, each [Status] = "Active"),
+    PackagesTable = Table.RenameColumns(
+        _PkgActive,
+        {{"Id", "id"}, {"Name", "name"}, {"Status_", "statusName"},
+         {"PackageTrackingStatusId", "currentTrackingStatusId"}}
     ),
 
     // ─── 3.  Load tracking statuses for display names ───────────────
@@ -211,21 +217,32 @@ let
              "ChainTopArea", "ChainAreaRow", "ChainRack", "ChainShelf",
              "TrackingStatusName"})),
 
-    // ─── 8.  Expand package lists into rows ─────────────────────────
-    //  Each container has a packageIds list.  Explode to 1 row per
-    //  container × packageId pair.
-    PkgExpanded = Table.ExpandListColumn(
-        Table.SelectRows(Chain, each [packageIds] <> null
-                                 and List.Count([packageIds]) > 0),
-        "packageIds"),
-    PkgRenamed = Table.RenameColumns(PkgExpanded, {{"packageIds", "pkgId"}}),
+    // ─── 8.  Join packages to containers via PackageContainer.1 ─────
+    //  Each package has "PackageContainer.1" = the parent/area container name.
+    //  "PackageContainer.2" (trimmed) = the child container name if present.
+    //  Rename package columns first to avoid collision with container cols.
+    PkgPrep0 = Table.SelectRows(PackagesTable,
+        each [#"PackageContainer.1"] <> null
+         and [#"PackageContainer.1"] <> ""),
+    // Trim PackageContainer.2 (has leading space from CSV split)
+    PkgPrep1 = Table.TransformColumns(PkgPrep0,
+        {{"PackageContainer.2", each Text.Trim(_ ?? ""), type nullable text}}),
+    PkgPrep = Table.RenameColumns(PkgPrep1,
+        {{"id", "PkgId"}, {"name", "PkgName"},
+         {"statusName", "PkgStatusName"},
+         {"currentTrackingStatusId", "PkgTrackingStatusId"}}),
 
-    // Join package details
-    P1 = Table.NestedJoin(PkgRenamed, {"pkgId"}, PackagesTable, {"id"},
-             "_pkg", JoinKind.LeftOuter),
-    P2 = Table.ExpandTableColumn(P1, "_pkg",
-        {"name", "statusName", "currentTrackingStatusId"},
-        {"PkgName", "PkgStatusName", "PkgTrackingStatusId"}),
+    // Join packages → Chain (containers) by PackageContainer.1 name
+    // Inner join: unmatched packages flow to §11 (UncontainedPackage)
+    PkgJoin = Table.NestedJoin(PkgPrep, {"PackageContainer.1"},
+        Chain, {"name"}, "_cont", JoinKind.Inner),
+    P2 = Table.ExpandTableColumn(PkgJoin, "_cont",
+        {"name", "id", "Role", "containerTypeName",
+         "TrackingStatusName", "parentContainerId",
+         "ChainTopArea", "ChainAreaRow", "ChainRack", "ChainShelf"},
+        {"name", "id", "Role", "containerTypeName",
+         "TrackingStatusName", "parentContainerId",
+         "ChainTopArea", "ChainAreaRow", "ChainRack", "ChainShelf"}),
 
     // Resolve package tracking status name
     P3 = Table.NestedJoin(P2, {"PkgTrackingStatusId"}, StatusLookup, {"id"},
@@ -238,13 +255,25 @@ let
         else [PkgTrackingName]),
 
     // ─── 9.  Determine parent vs child for each container-pkg row ───
-    //  The container that owns the packageIds could be the parent OR
-    //  the child.  The child container has a parentContainerId → the parent.
-    //  If the owning container is a Child type → look up its parent.
-    //  If it's a TopArea/AreaRow/Rack/Shelf → it IS the parent.
+    //  PackageContainer.1 = the matched container from Chain.
+    //  PackageContainer.2 = child container name (if comma-separated).
+    //  When .2 is present, .1 is the parent area and .2 is the child.
 
-    // For Child containers: look up parent via parentContainerId
-    Q1 = Table.NestedJoin(P5, {"parentContainerId"}, ContainerIdIndex, {"id"},
+    // Resolve PackageContainer.2 → child container details from Chain
+    P6 = Table.NestedJoin(P5, {"PackageContainer.2"}, Chain, {"name"},
+             "_child2", JoinKind.LeftOuter),
+    P7 = Table.ExpandTableColumn(P6, "_child2",
+        {"name", "id", "containerTypeName", "TrackingStatusName"},
+        {"Child2Name", "Child2Id", "Child2Type", "Child2Status"}),
+
+    // Determine if .2 matched a known container
+    P8 = Table.AddColumn(P7, "_has2", each
+        [#"PackageContainer.2"] <> null
+        and [#"PackageContainer.2"] <> ""
+        and [Child2Name] <> null),
+
+    // For Child-role containers (no .2): look up parent via parentContainerId
+    Q1 = Table.NestedJoin(P8, {"parentContainerId"}, ContainerIdIndex, {"id"},
              "_parent", JoinKind.LeftOuter),
     Q2 = Table.ExpandTableColumn(Q1, "_parent",
         {"name", "id", "Role", "ChainTopArea", "ChainAreaRow",
@@ -253,40 +282,57 @@ let
          "ParentAreaRow", "ParentRack", "ParentShelf", "ParentStatusName"}),
 
     // Assign hierarchy columns based on role of the owning container
+    //  If _has2: .1 is the parent (TopArea), use its chain columns directly
+    //  If Role=Child: use parent lookup columns
+    //  Otherwise: use the matched container's chain columns
     Q3 = Table.AddColumn(Q2, "EffTopArea", each
-        if [Role] = "Child" then [ParentTopArea]
+        if [_has2]          then [ChainTopArea]
+        else if [Role] = "Child" then [ParentTopArea]
         else [ChainTopArea]),
     Q4 = Table.AddColumn(Q3, "EffAreaRow", each
-        if [Role] = "Child" then [ParentAreaRow]
+        if [_has2]          then [ChainAreaRow]
+        else if [Role] = "Child" then [ParentAreaRow]
         else [ChainAreaRow]),
     Q5 = Table.AddColumn(Q4, "EffRack", each
-        if [Role] = "Child" then [ParentRack]
+        if [_has2]          then [ChainRack]
+        else if [Role] = "Child" then [ParentRack]
         else [ChainRack]),
     Q6 = Table.AddColumn(Q5, "EffShelf", each
-        if [Role] = "Child" then [ParentShelf]
+        if [_has2]          then [ChainShelf]
+        else if [Role] = "Child" then [ParentShelf]
         else [ChainShelf]),
 
     // Parent container info
     Q7 = Table.AddColumn(Q6, "FinalParentName", each
-        if [Role] = "Child" then [ParentName]
+        if [_has2]          then [name]        // .1 container = parent
+        else if [Role] = "Child" then [ParentName]
         else [name]),
     Q8 = Table.AddColumn(Q7, "FinalParentId", each
-        if [Role] = "Child" then [ParentId]
+        if [_has2]          then [id]
+        else if [Role] = "Child" then [ParentId]
         else [id]),
 
-    // Child container info (only if owning container is a Child type)
+    // Child container info
+    //  _has2 → use the resolved .2 container
+    //  Role=Child → use the .1 container (it IS the child)
+    //  Otherwise → no child (ParentDirectPackage)
     Q9  = Table.AddColumn(Q8, "ChildName", each
-        if [Role] = "Child" then [name] else null),
+        if [_has2]          then [Child2Name]
+        else if [Role] = "Child" then [name] else null),
     Q10 = Table.AddColumn(Q9, "ChildId", each
-        if [Role] = "Child" then [id] else null),
+        if [_has2]          then [Child2Id]
+        else if [Role] = "Child" then [id] else null),
     Q11 = Table.AddColumn(Q10, "ChildType", each
-        if [Role] = "Child" then [containerTypeName] else null),
+        if [_has2]          then [Child2Type]
+        else if [Role] = "Child" then [containerTypeName] else null),
     Q12 = Table.AddColumn(Q11, "ChildStatus", each
-        if [Role] = "Child" then [TrackingStatusName] else null),
+        if [_has2]          then [Child2Status]
+        else if [Role] = "Child" then [TrackingStatusName] else null),
 
     // RowKind
     Q13 = Table.AddColumn(Q12, "RowKind", each
-        if [Role] = "Child" then "ChildPackage"
+        if [_has2]          then "ChildPackage"
+        else if [Role] = "Child" then "ChildPackage"
         else                     "ParentDirectPackage"),
 
     // ─── 10. EffectiveDisplayParent ─────────────────────────────────
@@ -354,18 +400,15 @@ let
     }),
 
     // ─── 11. UncontainedPackage rows ────────────────────────────────
-    //  Packages that don't appear in ANY container's packageIds
-    AllContainerPkgIds = List.Buffer(List.Distinct(
-        List.Combine(
-            List.Transform(
-                Table.Column(
-                    Table.SelectRows(ContainersTable,
-                        each [packageIds] <> null),
-                    "packageIds"),
-                each _)))),
+    //  Packages whose PackageContainer.1 is blank or doesn't match
+    //  any known container name.
+    AllContainerNames = List.Buffer(List.Distinct(
+        Table.Column(Chain, "name"))),
 
     UncontainedPkgs = Table.SelectRows(PackagesTable,
-        each not List.Contains(AllContainerPkgIds, [id])),
+        each [#"PackageContainer.1"] = null
+          or [#"PackageContainer.1"] = ""
+          or not List.Contains(AllContainerNames, [#"PackageContainer.1"])),
 
     // Resolve their tracking status
     U1 = Table.NestedJoin(UncontainedPkgs, {"currentTrackingStatusId"},
@@ -414,9 +457,17 @@ let
     UncontainedTable = Table.FromRecords(UncontainedRecords),
 
     // ─── 12. ChildNoPackage rows ────────────────────────────────────
-    //  Child containers whose packageIds list is empty or null
+    //  Child containers whose name doesn't appear in any package's
+    //  PackageContainer.1  (i.e. they hold no packages).
+    AllPkgContainerNames = List.Buffer(List.Distinct(
+        Table.Column(
+            Table.SelectRows(PackagesTable,
+                each [#"PackageContainer.1"] <> null
+                 and [#"PackageContainer.1"] <> ""),
+            "PackageContainer.1"))),
+
     EmptyChildren = Table.SelectRows(A_Children,
-        each [packageIds] = null or List.Count([packageIds]) = 0),
+        each not List.Contains(AllPkgContainerNames, [name])),
 
     // Look up their parent
     EC1 = Table.NestedJoin(EmptyChildren, {"parentContainerId"},
