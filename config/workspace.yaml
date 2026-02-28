@@ -1,0 +1,17 @@
+# pbi-tools workspace configuration
+# Add the absolute paths of folders you want to expose to the tool.
+# Only files inside these folders will be accessible (allowlist-based access).
+
+workspace_folders:
+  - ~/PowerBI/projects   # example – replace with your actual folder(s)
+
+# Optional: restrict which file extensions are allowed (default shown below).
+allowed_extensions:
+  - .pbix
+  - .pbit
+
+# Maximum number of rows returned by any data-sample operation.
+max_sample_rows: 100
+
+# Log level: DEBUG | INFO | WARNING | ERROR
+log_level: INFO
