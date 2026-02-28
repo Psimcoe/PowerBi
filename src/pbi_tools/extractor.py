@@ -1,8 +1,9 @@
 """Metadata extractor for PBIX / PBIT artifacts.
 
 Extracts:
-- Power Query M scripts (from the nested DataMashup ZIP)
-- Data model schema (tables, columns, measures) – PBIT only
+- Power Query M scripts (from the nested DataMashup ZIP, or via
+  ``pbixray`` for PBIX files that use XPress9-compressed ABF DataModel)
+- Data model schema (tables, columns, measures)
 - Connection / data-source information
 """
 
@@ -19,6 +20,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .reader import PBIReader
+
+try:
+    from pbixray import PBIXRay  # optional heavy dependency for PBIX ABF
+
+    _HAS_PBIXRAY = True
+except ImportError:  # pragma: no cover
+    _HAS_PBIXRAY = False
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +107,15 @@ class PBIExtractor:
             meta.queries = self._extract_queries(reader)
             meta.tables = self._extract_tables(reader)
             meta.connections = self._extract_connections(reader)
+
+        # -- Fallback: use pbixray for PBIX files with ABF DataModel ------
+        if not meta.queries and meta.file_type == "pbix" and _HAS_PBIXRAY:
+            logger.info("No DataMashup found; falling back to pbixray for %s", self.path.name)
+            pq, tbl = _extract_via_pbixray(self.path)
+            meta.queries = pq
+            if not meta.tables:
+                meta.tables = tbl
+
         return meta
 
     # ------------------------------------------------------------------
@@ -112,7 +129,7 @@ class PBIExtractor:
         return _parse_mashup(raw)
 
     # ------------------------------------------------------------------
-    # Data model schema (PBIT only – JSON inside DataModelSchema member)
+    # Data model schema
     # ------------------------------------------------------------------
 
     def _extract_tables(self, reader: PBIReader) -> List[TableInfo]:
@@ -278,3 +295,65 @@ def _parse_connections(raw: bytes) -> List[ConnectionInfo]:
     # Fall back – return the raw text as a single opaque entry
     conns.append(ConnectionInfo(protocol=None, address=None, raw=text))
     return conns
+
+
+# ---------------------------------------------------------------------------
+# pbixray-based extraction (PBIX files with ABF/XPress9 DataModel)
+# ---------------------------------------------------------------------------
+
+
+def _extract_via_pbixray(
+    path: Path,
+) -> tuple[List[QueryInfo], List[TableInfo]]:
+    """Use *pbixray* to decompress the ABF DataModel and extract metadata.
+
+    Returns ``(queries, tables)``.
+    """
+    queries: List[QueryInfo] = []
+    tables: List[TableInfo] = []
+    try:
+        model = PBIXRay(str(path))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pbixray failed to open %s: %s", path.name, exc)
+        return queries, tables
+
+    # -- Power Query M expressions ----------------------------------------
+    try:
+        import pandas as pd  # pbixray returns DataFrames
+
+        pq = model.power_query
+        if isinstance(pq, pd.DataFrame) and not pq.empty:
+            for _, row in pq.iterrows():
+                name = str(row.get("TableName", row.get("Name", "")))
+                expr = str(row.get("Expression", ""))
+                if name and expr:
+                    queries.append(QueryInfo(name=name, script=expr))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pbixray power_query extraction failed: %s", exc)
+
+    # -- Schema (tables / columns) ----------------------------------------
+    try:
+        import pandas as pd
+
+        schema = model.schema
+        if isinstance(schema, pd.DataFrame) and not schema.empty:
+            # schema has columns: TableName, ColumnName, DataType (approx.)
+            table_col = "TableName" if "TableName" in schema.columns else schema.columns[0]
+            col_col = "ColumnName" if "ColumnName" in schema.columns else schema.columns[1]
+            dtype_col = "DataType" if "DataType" in schema.columns else (
+                schema.columns[2] if len(schema.columns) > 2 else None
+            )
+            grouped = schema.groupby(table_col)
+            for tname, grp in grouped:
+                cols = [
+                    ColumnInfo(
+                        name=str(r[col_col]),
+                        data_type=str(r[dtype_col]) if dtype_col else "unknown",
+                    )
+                    for _, r in grp.iterrows()
+                ]
+                tables.append(TableInfo(name=str(tname), columns=cols))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("pbixray schema extraction failed: %s", exc)
+
+    return queries, tables

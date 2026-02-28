@@ -176,7 +176,7 @@ def validate(ctx: click.Context, file_path: str) -> None:
         if MEMBER_CONTENT_TYPES not in members:
             issues.append(f"Missing required member: {MEMBER_CONTENT_TYPES}")
 
-        if MEMBER_DATA_MASHUP not in members:
+        if MEMBER_DATA_MASHUP not in members and path.suffix.lower() == ".pbit":
             warnings.append("DataMashup not found – Power Query queries will not be available.")
 
         if path.suffix.lower() == ".pbit" and MEMBER_DATA_MODEL_SCHEMA not in members:
