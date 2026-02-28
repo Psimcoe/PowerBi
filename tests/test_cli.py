@@ -12,7 +12,7 @@ from tests import FIXTURES_DIR, SAMPLE_PBIT
 
 
 def _runner() -> CliRunner:
-    return CliRunner(mix_stderr=False)
+    return CliRunner()
 
 
 class TestListFilesCommand:

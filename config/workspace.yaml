@@ -3,7 +3,7 @@
 # Only files inside these folders will be accessible (allowlist-based access).
 
 workspace_folders:
-  - ~/PowerBI/projects   # example – replace with your actual folder(s)
+  - "C:\\Users\\psimcoe\\OneDrive - sullymac.com\\PAUL SIMCOE\\Z. SMC-WAREHOUSE MANAGEMENT\\Power Bi"
 
 # Optional: restrict which file extensions are allowed (default shown below).
 allowed_extensions:
