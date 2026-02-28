@@ -1,0 +1,151 @@
+// =====================================================================
+//  DAX Measures for Container & Package Hierarchy Report
+//  ─────────────────────────────────────────────────────
+//  Table name: ContainersHierarchy_API  (the M query output)
+//
+//  Paste each measure into Power BI:
+//    Modeling → New Measure → paste formula → Enter
+//
+//  Tip: Create a "Measures" display folder by selecting all measures
+//       in the Fields pane → Properties → Display folder = "Measures"
+// =====================================================================
+
+// ─── Page 1: Executive Summary KPIs ─────────────────────────────────
+
+Total Active Packages =
+CALCULATE(
+    COUNTROWS('ContainersHierarchy_API'),
+    NOT('ContainersHierarchy_API'[RowKind] IN {"ChildNoPackage", "ParentEmpty"}),
+    'ContainersHierarchy_API'[PackageName] <> "(No Package)"
+)
+
+Empty Containers =
+CALCULATE(
+    COUNTROWS('ContainersHierarchy_API'),
+    'ContainersHierarchy_API'[RowKind] = "ChildNoPackage"
+)
+
+Not Physically Used =
+CALCULATE(
+    COUNTROWS('ContainersHierarchy_API'),
+    'ContainersHierarchy_API'[DisplayStatus] = "Not Physically Used Yet"
+)
+
+Avg Duration Days =
+AVERAGE('ContainersHierarchy_API'[DurationDays])
+
+Containers at Job Site =
+CALCULATE(
+    COUNTROWS('ContainersHierarchy_API'),
+    'ContainersHierarchy_API'[EffectiveDisplayParentName] = "Job Site"
+)
+
+// ─── Page 1: Chart support ──────────────────────────────────────────
+
+Package Count =
+CALCULATE(
+    COUNTROWS('ContainersHierarchy_API'),
+    'ContainersHierarchy_API'[PackageName] <> "(No Package)"
+)
+
+Row Count =
+COUNTROWS('ContainersHierarchy_API')
+
+// ─── Page 2: Hierarchy Detail ───────────────────────────────────────
+
+Unique Containers =
+CALCULATE(
+    DISTINCTCOUNT('ContainersHierarchy_API'[ChildContainerId]),
+    'ContainersHierarchy_API'[ChildContainerId] <> BLANK()
+)
+
+Unique Parents =
+CALCULATE(
+    DISTINCTCOUNT('ContainersHierarchy_API'[ParentContainerId]),
+    'ContainersHierarchy_API'[ParentContainerId] <> BLANK()
+)
+
+// ─── Page 3: Status & Duration Breakdown ────────────────────────────
+
+Max Duration Days =
+MAX('ContainersHierarchy_API'[DurationDays])
+
+Min Duration Days =
+MIN('ContainersHierarchy_API'[DurationDays])
+
+Median Duration Days =
+MEDIAN('ContainersHierarchy_API'[DurationDays])
+
+Containers Over 90 Days =
+CALCULATE(
+    COUNTROWS('ContainersHierarchy_API'),
+    'ContainersHierarchy_API'[DurationDays] > 90
+)
+
+Containers Over 60 Days =
+CALCULATE(
+    COUNTROWS('ContainersHierarchy_API'),
+    'ContainersHierarchy_API'[DurationDays] > 60
+)
+
+// ─── Duration Aging Bucket (calculated column alternative) ──────────
+//  Use as a measure with SWITCH for conditional formatting,
+//  or create as a calculated column on the table.
+
+Duration Bucket =
+SWITCH(
+    TRUE(),
+    MAX('ContainersHierarchy_API'[DurationDays]) <= 30, "0-30 days",
+    MAX('ContainersHierarchy_API'[DurationDays]) <= 60, "31-60 days",
+    MAX('ContainersHierarchy_API'[DurationDays]) <= 90, "61-90 days",
+    MAX('ContainersHierarchy_API'[DurationDays]) > 90,  "90+ days",
+    "Unknown"
+)
+
+// ─── Facility Summary (for card visuals) ────────────────────────────
+
+Campanelli Package Count =
+CALCULATE(
+    [Package Count],
+    'ContainersHierarchy_API'[EffectiveDisplayParentName] = "180 Campanelli"
+)
+
+Ericsson Package Count =
+CALCULATE(
+    [Package Count],
+    'ContainersHierarchy_API'[EffectiveDisplayParentName] = "6 Ericsson St"
+)
+
+Job Site Package Count =
+CALCULATE(
+    [Package Count],
+    'ContainersHierarchy_API'[EffectiveDisplayParentName] = "Job Site"
+)
+
+// ─── Conditional formatting helper ──────────────────────────────────
+//  Returns a color hex code for duration-based formatting.
+//  Use in: Visual → Format → Conditional formatting → Field value
+
+Duration Color =
+SWITCH(
+    TRUE(),
+    MAX('ContainersHierarchy_API'[DurationDays]) <= 30, "#107C10",
+    MAX('ContainersHierarchy_API'[DurationDays]) <= 90, "#FFB900",
+    MAX('ContainersHierarchy_API'[DurationDays]) > 90,  "#D13438",
+    "#CCCCCC"
+)
+
+// ─── Status color helper ────────────────────────────────────────────
+//  For conditional formatting on DisplayStatus column
+
+Status Color =
+VAR _status = MAX('ContainersHierarchy_API'[DisplayStatus])
+RETURN
+SWITCH(
+    TRUE(),
+    _status = "Not Physically Used Yet",    "#FF8C00",
+    _status = "Shipped to Jobsite",         "#107C10",
+    _status = "Received on Jobsite",        "#107C10",
+    ISBLANK(_status),                       "#E0E0E0",
+    "#0078D4"
+)
