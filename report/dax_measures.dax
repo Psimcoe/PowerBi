@@ -88,19 +88,37 @@ CALCULATE(
     'ContainersHierarchy_API'[DurationDays] > 60
 )
 
-// ─── Duration Aging Bucket (calculated column alternative) ──────────
-//  Use as a measure with SWITCH for conditional formatting,
-//  or create as a calculated column on the table.
+// ─── Duration Aging Bucket (calculated columns) ────────────────────
+//  Create TWO calculated columns:
+//    1. "Duration Bucket" — text label for slicers & legends
+//    2. "Duration Bucket Sort" — numeric sort key
+//  After creating both, set Sort by Column:
+//    Select Duration Bucket → Column tools → Sort by Column → Duration Bucket Sort
 
-Duration Bucket =
-SWITCH(
-    TRUE(),
-    MAX('ContainersHierarchy_API'[DurationDays]) <= 30, "0-30 days",
-    MAX('ContainersHierarchy_API'[DurationDays]) <= 60, "31-60 days",
-    MAX('ContainersHierarchy_API'[DurationDays]) <= 90, "61-90 days",
-    MAX('ContainersHierarchy_API'[DurationDays]) > 90,  "90+ days",
-    "Unknown"
-)
+// --- Calculated Column 1 (Modeling → New Column) ---
+// Duration Bucket =
+// SWITCH(
+//     TRUE(),
+//     'ContainersHierarchy_API'[DurationDays] <= 30, "0-30 days",
+//     'ContainersHierarchy_API'[DurationDays] <= 60, "31-60 days",
+//     'ContainersHierarchy_API'[DurationDays] <= 90, "61-90 days",
+//     'ContainersHierarchy_API'[DurationDays] > 90,  "90+ days",
+//     "Unknown"
+// )
+
+// --- Calculated Column 2 (Modeling → New Column) ---
+// Duration Bucket Sort =
+// SWITCH(
+//     TRUE(),
+//     'ContainersHierarchy_API'[DurationDays] <= 30, 1,
+//     'ContainersHierarchy_API'[DurationDays] <= 60, 2,
+//     'ContainersHierarchy_API'[DurationDays] <= 90, 3,
+//     'ContainersHierarchy_API'[DurationDays] > 90,  4,
+//     5
+// )
+
+// Then: Select Duration Bucket column → Column tools → Sort by Column → Duration Bucket Sort
+// Optionally hide Duration Bucket Sort: right-click → Hide in report view
 
 // ─── Facility Summary (for card visuals) ────────────────────────────
 

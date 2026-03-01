@@ -74,7 +74,7 @@ Open `report/dax_measures.dax` and create each measure one at a time:
 | 12 | `Median Duration Days` | Page 3 stats |
 | 13 | `Containers Over 90 Days` | Page 3 alert |
 | 14 | `Containers Over 60 Days` | Page 3 alert |
-| 15 | `Duration Bucket` | Aging categorization |
+| 15 | `Duration Bucket` | Aging categorization (calculated column — see Step 3) |
 | 16 | `Campanelli Package Count` | Facility card |
 | 17 | `Ericsson Package Count` | Facility card |
 | 18 | `Job Site Package Count` | Facility card |
@@ -85,9 +85,11 @@ After creating all measures, select them all → **Properties → Display Folder
 
 ---
 
-## Step 3 — Create a Duration Bucket Calculated Column
+## Step 3 — Create Duration Bucket Calculated Columns
 
-This gives every row an aging category for slicers and legends:
+This gives every row an aging category for slicers and legends. You need **two** columns — the text label and a numeric sort key.
+
+### 3a. Duration Bucket (text label)
 
 1. Select the `ContainersHierarchy_API` table
 2. **Modeling → New Column**
@@ -105,7 +107,28 @@ SWITCH(
 )
 ```
 
-4. Set sort order: Column tools → Sort by Column → `DurationDays`
+### 3b. Duration Bucket Sort (numeric sort key)
+
+1. **Modeling → New Column** again
+2. Paste:
+
+```dax
+Duration Bucket Sort =
+SWITCH(
+    TRUE(),
+    'ContainersHierarchy_API'[DurationDays] <= 30, 1,
+    'ContainersHierarchy_API'[DurationDays] <= 60, 2,
+    'ContainersHierarchy_API'[DurationDays] <= 90, 3,
+    'ContainersHierarchy_API'[DurationDays] > 90,  4,
+    5
+)
+```
+
+### 3c. Set sort order
+
+1. In the Fields pane, click **Duration Bucket** to select it
+2. **Column tools → Sort by Column → Duration Bucket Sort**
+3. Optionally hide `Duration Bucket Sort`: right-click → **Hide in report view**
 
 ---
 
@@ -117,9 +140,16 @@ SWITCH(
 
 ### 4b. KPI Card Row (top, left to right)
 
-Create 5 **Card** visuals across the top ~15% of the page:
+Create 5 **Card** visuals across the top ~15% of the page.
 
-| Card | Field / Measure | Format |
+> **Note:** In newer Power BI Desktop, the Card visual shows **Value**, **Trend axis**, and **Target** wells. Drag the measure into the **Value** well. Leave Trend axis and Target empty.
+
+For each card:
+1. Insert a **Card** visual from the Visualizations pane
+2. Drag the measure into the **Value** well
+3. Format the callout value and category label in the Format pane
+
+| Card | Drag to Value | Format |
 |---|---|---|
 | 1 | `[Total Active Packages]` | Callout: 28pt, category label "Active Packages" |
 | 2 | `[Empty Containers]` | Callout: 28pt, category label "Empty Containers" |
@@ -207,9 +237,12 @@ Create 5 **Card** visuals across the top ~15% of the page:
 - Conditional formatting on `DurationDays`:
   - Data bars: Min green `#107C10`, Max red `#D13438`
 
-### 5c. Card (top-right corner)
+### 5c. Cards (top-right corner)
 
-- Show `[Package Count]`, `[Empty Containers]`, `[Avg Duration Days]`
+Create 3 separate **Card** visuals, each with one measure in the **Value** well:
+- Card 1: `[Package Count]`
+- Card 2: `[Empty Containers]`
+- Card 3: `[Avg Duration Days]`
 - These respond to the current slicer selection
 
 ### 5d. Slicers (top strip)
