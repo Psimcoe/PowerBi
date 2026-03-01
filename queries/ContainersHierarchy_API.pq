@@ -39,13 +39,18 @@ let
                    "666999STG-180 CAMPANELLI PARKWAY STOUGHTON"},
     _ERIC_ROOTS = {"6 ERICSSON ST", "999999RRR-6 ERICSSON  ST. DORCHESTER"},
 
-    // Convert a TopArea name to a display facility name
-    _FacilityName = (topArea as nullable text) as text =>
+    // Convert a TopArea name to a display facility name.
+    // Only 3 top-level groups: 180 Campanelli, 6 Ericsson St, Job Site.
+    // Project containers (not in _CAMP_ROOTS / _ERIC_ROOTS) are mapped
+    // to a warehouse via the TopArea's location field.  They move to
+    // "Job Site" only when their tracking status is shipped/received
+    // (handled by the _isJS flag at each call site).
+    _FacilityName = (topArea as nullable text, topAreaLocation as nullable text) as text =>
         if topArea <> null and List.Contains(_CAMP_ROOTS, topArea)
             then _CAMP_NAME
         else if topArea <> null and List.Contains(_ERIC_ROOTS, topArea)
             then _ERIC_NAME
-        else if topArea <> null then topArea      // Job-site containers keep name
+        else if topArea <> null then _FacilityFromLocation(topAreaLocation)
         else _CAMP_NAME,                          // Orphan fallback
 
     // Convert a facility display name to its synthetic ID
@@ -397,16 +402,18 @@ let
         List.Contains(_JS_UPPER, [_pkgSU])
         or List.Contains(_JS_UPPER, [_cSU])),
 
-    R4 = Table.AddColumn(R3, "EffectiveDisplayParentName", each
+    // Join TopArea to get its id and location (for project-container resolution)
+    R3b = Table.NestedJoin(R3, {"EffTopArea"}, A_TopAreas, {"name"},
+              "_taJ", JoinKind.LeftOuter),
+    R3c = Table.ExpandTableColumn(R3b, "_taJ",
+              {"id", "location"}, {"_taId", "_taLocation"}),
+
+    R4 = Table.AddColumn(R3c, "EffectiveDisplayParentName", each
         if [_isJS]                   then _JS_NAME
-        else if [EffTopArea] <> null then _FacilityName([EffTopArea])
+        else if [EffTopArea] <> null then _FacilityName([EffTopArea], [_taLocation])
         else                              _CAMP_NAME),
 
-    R5 = Table.NestedJoin(R4, {"EffTopArea"}, A_TopAreas, {"name"},
-             "_taJ", JoinKind.LeftOuter),
-    R6 = Table.ExpandTableColumn(R5, "_taJ", {"id"}, {"_taId"}),
-
-    R7 = Table.AddColumn(R6, "EffectiveDisplayParentId", each
+    R7 = Table.AddColumn(R4, "EffectiveDisplayParentId", each
         _FacilityId([EffectiveDisplayParentName], [_taId])),
 
     R8 = Table.AddColumn(R7, "RelationshipStatus", each
@@ -522,17 +529,19 @@ let
             Text.Upper(Text.Trim(
                 if [TrackingStatusName] <> null then [TrackingStatusName] else "")))),
 
-    // Determine display parent: use facility, fallback to location
-    EC4 = Table.AddColumn(EC3, "EffectiveDisplayParentName", each
+    // Join TopArea to get its id and location (for project-container resolution)
+    EC3b = Table.NestedJoin(EC3, {"ECTopArea"}, A_TopAreas, {"name"},
+               "_taJ", JoinKind.LeftOuter),
+    EC3c = Table.ExpandTableColumn(EC3b, "_taJ",
+               {"id", "location"}, {"_taId", "_taLocation"}),
+
+    // Determine display parent: use facility, fallback to TopArea location
+    EC4 = Table.AddColumn(EC3c, "EffectiveDisplayParentName", each
         if [_isJS]                  then _JS_NAME
-        else if [ECTopArea] <> null then _FacilityName([ECTopArea])
+        else if [ECTopArea] <> null then _FacilityName([ECTopArea], [_taLocation])
         else                             _FacilityFromLocation([location])),
 
-    EC5 = Table.NestedJoin(EC4, {"ECTopArea"}, A_TopAreas, {"name"},
-              "_taJ", JoinKind.LeftOuter),
-    EC6 = Table.ExpandTableColumn(EC5, "_taJ", {"id"}, {"_taId"}),
-
-    EC7 = Table.AddColumn(EC6, "EffectiveDisplayParentId", each
+    EC7 = Table.AddColumn(EC4, "EffectiveDisplayParentId", each
         _FacilityId([EffectiveDisplayParentName], [_taId])),
 
     // Join container creation date
@@ -603,7 +612,7 @@ let
     }))),
 
     EmptyParents = Table.SelectRows(A_TopAreas,
-        each not List.Contains(UsedParents, _FacilityName([name]))),
+        each not List.Contains(UsedParents, _FacilityName([name], [location]))),
 
     // Join parent creation date
     EP1 = Table.NestedJoin(EmptyParents, {"id"}, _ContainerDatesR, {"cId"},
@@ -620,7 +629,7 @@ let
     ParentEmptyRecords = List.Transform(
         Table.ToRecords(EP4),
         each let
-            facName   = _FacilityName([name]),
+            facName   = _FacilityName([name], [location]),
             hasStatus = [TrackingStatusName] <> null,
             refDate   = if [LatestChildCreatedDT] <> null
                         then [LatestChildCreatedDT]

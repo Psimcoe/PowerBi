@@ -26,7 +26,8 @@
 
 - The table should have **16 columns**:
   `EffectiveDisplayParentId`, `EffectiveDisplayParentName`, `ParentContainerId`, `ParentContainerName`, `AreaRowName`, `RackName`, `ShelfName`, `ChildContainerId`, `ChildContainerName`, `ChildContainerType`, `PackageName`, `RowKind`, `RelationshipStatus`, `DisplayStatus`, `DisplayState`, `DurationDays`
-- `EffectiveDisplayParentName` should show: **180 Campanelli**, **6 Ericsson St**, **Job Site**, or specific job-site project names — **never** "180 Campanelli IR 6 Ericsson"
+- `EffectiveDisplayParentName` should show only three values: **180 Campanelli**, **6 Ericsson St**, or **Job Site** — **never** individual project codes or "180 Campanelli IR 6 Ericsson"
+- Project containers (e.g. 270005SHW, 180035PGG) appear under the **warehouse** they are physically at (based on their `location` field), and move to **Job Site** only when their tracking status is "Shipped to Jobsite" or "Received on Jobsite"
 - `DisplayStatus` should include **"Not Physically Used Yet"** for empty containers with no tracking status
 - `DurationDays` should be populated for most rows (numeric)
 
@@ -319,8 +320,8 @@ Create 3 separate **Card** visuals, each with one measure in the **Value** well:
 
 ### Verification Checklist
 
-- [ ] `EffectiveDisplayParentName` slicer shows: **180 Campanelli**, **6 Ericsson St**, **Job Site**, and job-site project names
-- [ ] **Never** shows "180 Campanelli IR 6 Ericsson"
+- [ ] `EffectiveDisplayParentName` slicer shows exactly three values: **180 Campanelli**, **6 Ericsson St**, **Job Site**
+- [ ] **Never** shows individual project codes (e.g. 270005SHW, 180035PGG) or "180 Campanelli IR 6 Ericsson"
 - [ ] "Not Physically Used Yet" appears in `DisplayStatus` for empty/no-status containers
 - [ ] `DurationDays` is populated — check a few rows in the matrix
 - [ ] `DisplayState` shows labels like "X days since creation", "X days in current status", "X days since last child added"
@@ -346,7 +347,7 @@ Create 3 separate **Card** visuals, each with one measure in the **Value** well:
 | Column | Type | Description |
 |---|---|---|
 | `EffectiveDisplayParentId` | text (nullable) | Synthetic ID: SYN-180CAMP, SYN-6ERIC, SYN-JOBSITE, or API id |
-| `EffectiveDisplayParentName` | text | Facility: "180 Campanelli", "6 Ericsson St", "Job Site", or project name |
+| `EffectiveDisplayParentName` | text | Facility: "180 Campanelli", "6 Ericsson St", or "Job Site" (only 3 values) |
 | `ParentContainerId` | text (nullable) | API container id of the parent |
 | `ParentContainerName` | text (nullable) | Display name of the parent container |
 | `AreaRowName` | text (nullable) | ROW A, ROW B, etc. |
