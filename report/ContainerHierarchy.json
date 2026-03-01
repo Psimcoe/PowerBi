@@ -16,61 +16,9 @@
     "good": "#107C10",
     "neutral": "#FFB900",
     "bad": "#D13438",
-    "visualStyles": {
-        "*": {
-            "*": {
-                "title": [
-                    {
-                        "fontFamily": "Segoe UI Semibold",
-                        "fontSize": 12
-                    }
-                ],
-                "labels": [
-                    {
-                        "fontFamily": "Segoe UI",
-                        "fontSize": 10
-                    }
-                ]
-            }
-        },
-        "card": {
-            "*": {
-                "labels": [
-                    {
-                        "fontSize": 28,
-                        "fontFamily": "Segoe UI Semibold"
-                    }
-                ],
-                "categoryLabels": [
-                    {
-                        "fontSize": 11,
-                        "fontFamily": "Segoe UI"
-                    }
-                ]
-            }
-        },
-        "slicer": {
-            "*": {
-                "items": [
-                    {
-                        "fontFamily": "Segoe UI",
-                        "fontSize": 10
-                    }
-                ],
-                "header": [
-                    {
-                        "fontFamily": "Segoe UI Semibold",
-                        "fontSize": 10
-                    }
-                ]
-            }
-        }
-    },
-    "sentimentColors": [
-        "#D13438",
-        "#FFB900",
-        "#107C10"
-    ],
+    "minimum": "#D13438",
+    "center": "#FFB900",
+    "maximum": "#107C10",
     "textClasses": {
         "title": {
             "fontFace": "Segoe UI Semibold",
