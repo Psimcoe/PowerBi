@@ -398,17 +398,21 @@ let
     R2 = Table.AddColumn(R1, "_cSU", each
         Text.Upper(Text.Trim(if [ChildStatus] <> null then [ChildStatus] else ""))),
 
-    R3 = Table.AddColumn(R2, "_isJS", each
-        List.Contains(_JS_UPPER, [_pkgSU])
-        or List.Contains(_JS_UPPER, [_cSU])),
-
-    // Join TopArea to get its id and location (for project-container resolution)
-    R3b = Table.NestedJoin(R3, {"EffTopArea"}, A_TopAreas, {"name"},
+    // Join TopArea to get its id, location, and tracking status
+    R3b = Table.NestedJoin(R2, {"EffTopArea"}, A_TopAreas, {"name"},
               "_taJ", JoinKind.LeftOuter),
     R3c = Table.ExpandTableColumn(R3b, "_taJ",
-              {"id", "location"}, {"_taId", "_taLocation"}),
+              {"id", "location", "TrackingStatusName"},
+              {"_taId", "_taLocation", "_taStatus"}),
 
-    R4 = Table.AddColumn(R3c, "EffectiveDisplayParentName", each
+    // Job Site if pkg, child, OR the TopArea itself is shipped/received
+    R3 = Table.AddColumn(R3c, "_isJS", each
+        let taSU = Text.Upper(Text.Trim(if [_taStatus] <> null then [_taStatus] else ""))
+        in  List.Contains(_JS_UPPER, [_pkgSU])
+            or List.Contains(_JS_UPPER, [_cSU])
+            or List.Contains(_JS_UPPER, taSU)),
+
+    R4 = Table.AddColumn(R3, "EffectiveDisplayParentName", each
         if [_isJS]                   then _JS_NAME
         else if [EffTopArea] <> null then _FacilityName([EffTopArea], [_taLocation])
         else                              _CAMP_NAME),
@@ -524,19 +528,24 @@ let
         {"ECParentName", "ECParentId", "ECTopArea",
          "ECAreaRow", "ECRack", "ECShelf"}),
 
-    EC3 = Table.AddColumn(EC2, "_isJS", each
-        List.Contains(_JS_UPPER,
-            Text.Upper(Text.Trim(
-                if [TrackingStatusName] <> null then [TrackingStatusName] else "")))),
-
-    // Join TopArea to get its id and location (for project-container resolution)
-    EC3b = Table.NestedJoin(EC3, {"ECTopArea"}, A_TopAreas, {"name"},
+    // Join TopArea to get its id, location, and tracking status
+    EC3b = Table.NestedJoin(EC2, {"ECTopArea"}, A_TopAreas, {"name"},
                "_taJ", JoinKind.LeftOuter),
     EC3c = Table.ExpandTableColumn(EC3b, "_taJ",
-               {"id", "location"}, {"_taId", "_taLocation"}),
+               {"id", "location", "TrackingStatusName"},
+               {"_taId", "_taLocation", "_taStatus"}),
+
+    // Job Site if child container OR its TopArea is shipped/received
+    EC3 = Table.AddColumn(EC3c, "_isJS", each
+        let childSU = Text.Upper(Text.Trim(
+                if [TrackingStatusName] <> null then [TrackingStatusName] else "")),
+            taSU    = Text.Upper(Text.Trim(
+                if [_taStatus] <> null then [_taStatus] else ""))
+        in  List.Contains(_JS_UPPER, childSU)
+            or List.Contains(_JS_UPPER, taSU)),
 
     // Determine display parent: use facility, fallback to TopArea location
-    EC4 = Table.AddColumn(EC3c, "EffectiveDisplayParentName", each
+    EC4 = Table.AddColumn(EC3, "EffectiveDisplayParentName", each
         if [_isJS]                  then _JS_NAME
         else if [ECTopArea] <> null then _FacilityName([ECTopArea], [_taLocation])
         else                             _FacilityFromLocation([location])),
@@ -612,7 +621,14 @@ let
     }))),
 
     EmptyParents = Table.SelectRows(A_TopAreas,
-        each not List.Contains(UsedParents, _FacilityName([name], [location]))),
+        each let
+            isJS = List.Contains(_JS_UPPER,
+                Text.Upper(Text.Trim(
+                    if [TrackingStatusName] <> null
+                    then [TrackingStatusName] else ""))),
+            fac  = if isJS then _JS_NAME
+                   else _FacilityName([name], [location])
+        in not List.Contains(UsedParents, fac)),
 
     // Join parent creation date
     EP1 = Table.NestedJoin(EmptyParents, {"id"}, _ContainerDatesR, {"cId"},
@@ -629,8 +645,13 @@ let
     ParentEmptyRecords = List.Transform(
         Table.ToRecords(EP4),
         each let
-            facName   = _FacilityName([name], [location]),
             hasStatus = [TrackingStatusName] <> null,
+            isJS      = List.Contains(_JS_UPPER,
+                            Text.Upper(Text.Trim(
+                                if [TrackingStatusName] <> null
+                                then [TrackingStatusName] else ""))),
+            facName   = if isJS then _JS_NAME
+                        else _FacilityName([name], [location]),
             refDate   = if [LatestChildCreatedDT] <> null
                         then [LatestChildCreatedDT]
                         else [ParentCreatedDT],
@@ -660,7 +681,9 @@ let
             ChildContainerType = null,
             PackageName = _NO_PKG,
             RowKind = "ParentEmpty",
-            RelationshipStatus = "Empty parent",
+            RelationshipStatus =
+                if isJS then "Status override: Job Site"
+                else "Empty parent",
             DisplayStatus =
                 if hasStatus then [TrackingStatusName]
                 else _NOT_USED,
