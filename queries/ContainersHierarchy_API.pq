@@ -32,7 +32,7 @@ let
     _DIRECT     = "(Directly on Parent)",
     _NOT_USED   = "Not Physically Used Yet",
     _JS_UPPER   = {"SHIPPED TO JOBSITE", "RECEIVED ON JOBSITE"},
-    _CHILD_TYPES = {"Cart", "Pallet", "Shipping", "Basket", "Box"},
+    _CHILD_TYPES = {"Cart", "Pallet", "Shipping", "Basket", "Box", "Container"},
 
     // Facility classification — which TopArea container names belong where
     _CAMP_ROOTS = {"180 CAMPANELLI - PREFAB", "180 Campanelli Warehouse",
