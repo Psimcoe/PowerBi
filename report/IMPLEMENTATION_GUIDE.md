@@ -1,6 +1,8 @@
 # Container & Package Hierarchy — Power BI Report Implementation Guide
 
-> **Query file:** `queries/ContainersHierarchy_API.pq` (751 lines, 16 output columns)
+> **Query files:**
+>   `queries/ContainersHierarchy_API.pq` — hierarchy (19 output columns)
+>   `queries/WeeklyContainerActivity.pq` — weekly activity (20 output columns)
 > **DAX measures:** `report/dax_measures.dax`
 > **Theme:** `report/ContainerHierarchy.json`
 
@@ -24,12 +26,32 @@
 
 ### Verify the Query Loaded Correctly
 
-- The table should have **16 columns**:
-  `EffectiveDisplayParentId`, `EffectiveDisplayParentName`, `ParentContainerId`, `ParentContainerName`, `AreaRowName`, `RackName`, `ShelfName`, `ChildContainerId`, `ChildContainerName`, `ChildContainerType`, `PackageName`, `RowKind`, `RelationshipStatus`, `DisplayStatus`, `DisplayState`, `DurationDays`
+- The table should have **19 columns**:
+  `EffectiveDisplayParentId`, `EffectiveDisplayParentName`, `ParentContainerId`, `ParentContainerName`, `AreaRowName`, `RackName`, `ShelfName`, `ChildContainerId`, `ChildContainerName`, `ChildContainerType`, `PackageName`, `RowKind`, `RelationshipStatus`, `DisplayStatus`, `DisplayState`, `DurationDays`, `ParentContainerQrCode`, `ChildContainerQrCode`, `PackageQrCode`
 - `EffectiveDisplayParentName` should show only three values: **180 Campanelli**, **6 Ericsson St**, or **Job Site** — **never** individual project codes or "180 Campanelli IR 6 Ericsson"
 - Project containers (e.g. 270005SHW, 180035PGG) appear under the **warehouse** they are physically at (based on their `location` field), and move to **Job Site** only when their tracking status is "Shipped to Jobsite" or "Received on Jobsite"
 - `DisplayStatus` should include **"Not Physically Used Yet"** for empty containers with no tracking status
 - `DurationDays` should be populated for most rows (numeric)
+
+---
+
+## Step 0b — Load the Weekly Activity Query
+
+1. In Power Query Editor, **New Source → Blank Query**
+2. Open **Advanced Editor**, paste the entire contents of `queries/WeeklyContainerActivity.pq`
+3. Click **Done** → rename the query to `WeeklyContainerActivity`
+4. Click **Close & Apply**
+5. Wait for refresh — the query fetches the last 7 days of activity from the API (~2-3 pages)
+
+> **Note:** This query references `ContainersHierarchy_API`, so that query must load first.
+
+### Verify the Activity Query
+
+- The table should have **20 columns**:
+  `ActivityDateTime`, `ActivityDate`, `ActivityDay`, `ActivityUser`, `ActionName`, `ActivityType`, `Route`, `ItemName`, `ItemType`, `ProjectName`, `ProjectNumber`, `TrackingStatusName`, `TrackingStatusColor`, `DivisionName`, `ParentContainerName`, `ChildContainerName`, `EffectiveDisplayParentName`, `ParentContainerQrCode`, `ChildContainerQrCode`, `PackageQrCode`
+- `ActivityType` values: "Item Added to Container", "Container Status Changed", "Package Status Changed", "Package Archived / Unarchived"
+- `ActivityDate` should show dates from the past 7 days only
+- Container context columns (`ParentContainerName`, `ChildContainerName`, `EffectiveDisplayParentName`) are populated via join to the hierarchy query
 
 ---
 
@@ -81,6 +103,12 @@ Open `report/dax_measures.dax` and create each measure one at a time:
 | 18 | `Job Site Package Count` | Facility card |
 | 19 | `Duration Color` | Conditional formatting field |
 | 20 | `Status Color` | Conditional formatting field |
+| 21 | `Total Activities This Week` | Page 4 KPI — total activity count |
+| 22 | `Status Changes This Week` | Page 4 KPI — status change count |
+| 23 | `Items Added to Containers This Week` | Page 4 KPI — items added |
+| 24 | `Unique Users This Week` | Page 4 KPI — distinct users |
+| 25 | `Unique Containers Touched This Week` | Page 4 KPI — containers with activity |
+| 26 | `Activity Count` | Page 4 chart values |
 
 After creating all measures, select them all → **Properties → Display Folder** = `Measures`
 
@@ -316,7 +344,151 @@ Create 3 separate **Card** visuals, each with one measure in the **Value** well:
 
 ---
 
-## Step 7 — Final Checks
+## Step 7 — Page 4: Weekly Activity Report
+
+This page powers the **Friday email subscription** — it shows all container and package activity from the past 7 days.
+
+### 7a. Create the page
+- Click **+** → rename to `Weekly Activity`
+
+### 7b. KPI Card Row (top, 5 cards)
+
+| Card | Drag to Value | Format |
+|---|---|---|
+| 1 | `[Total Activities This Week]` | Callout: 28pt, category label "Total Activities" |
+| 2 | `[Status Changes This Week]` | Callout: 28pt, category label "Status Changes" |
+| 3 | `[Items Added to Containers This Week]` | Callout: 28pt, category label "Items Added to Containers" |
+| 4 | `[Unique Users This Week]` | Callout: 28pt, category label "Active Users" |
+| 5 | `[Unique Containers Touched This Week]` | Callout: 28pt, category label "Containers Touched" |
+
+### 7c. Clustered Bar Chart (left, ~50% width)
+
+- **Axis:** `ActivityDay`
+- **Values:** `[Activity Count]`
+- **Legend:** `ActivityType`
+- Title: "Activity by Day"
+- Sort by `ActivityDate` ascending (click the chart → sort icon → `ActivityDate`)
+
+### 7d. Donut Chart (right, ~25% width)
+
+- **Legend:** `ActivityType`
+- **Values:** `[Activity Count]`
+- Title: "Activity Breakdown"
+- Detail labels: Show category + percentage
+
+### 7e. Stacked Bar Chart (right, below donut, ~25% width)
+
+- **Axis:** `EffectiveDisplayParentName`
+- **Values:** `[Activity Count]`
+- **Legend:** `ActivityType`
+- Title: "Activity by Facility"
+- Data colors: Campanelli `#0078D4`, Ericsson `#00B7C3`, Job Site `#107C10`
+
+### 7f. Activity Detail Table (bottom, full width)
+
+This table is the core of the email — it shows every individual activity event.
+
+- **Columns (in order):**
+  `ActivityDate`, `ActivityUser`, `ActivityType`, `ItemName`, `ProjectName`,
+  `TrackingStatusName`, `ParentContainerName`, `ChildContainerName`,
+  `EffectiveDisplayParentName`, `ChildContainerQrCode`, `PackageQrCode`
+- Sort: `ActivityDateTime` descending (newest first)
+- Conditional formatting on `ActivityType`:
+  - "Item Added to Container" → Background `#E6F2E6` (light green)
+  - "Container Status Changed" → Background `#E6F0FA` (light blue)
+  - "Package Status Changed" → Background `#FFF4E6` (light orange)
+- Conditional formatting on `TrackingStatusName`:
+  - "Shipped to Jobsite" / "Received on Jobsite" → Background `#107C10`, font white
+  - "Fabrication Complete" → Background `#00B7C3`, font white
+
+### 7g. Slicers (top strip)
+
+| Slicer | Field | Style |
+|---|---|---|
+| 1 | `EffectiveDisplayParentName` | Dropdown (synced) |
+| 2 | `ActivityType` | Dropdown |
+| 3 | `ActivityUser` | Dropdown |
+| 4 | `ProjectName` | Dropdown |
+| 5 | `ActivityDate` | Date range (Between) |
+
+### 7h. Sync Slicers
+
+- Sync `EffectiveDisplayParentName` across all 4 pages
+
+---
+
+## Step 8 — Friday Email Subscription
+
+To automatically email the Weekly Activity page every Friday:
+
+### Option A: Power BI Service Subscription (simplest)
+
+1. **Publish** the report to Power BI Service:
+   - In Power BI Desktop: **Home → Publish → select your workspace**
+2. Open the report in **app.powerbi.com**
+3. Navigate to the **Weekly Activity** page
+4. Click **Subscribe to report** (envelope icon in the toolbar), or **File → Subscribe**
+5. Configure the subscription:
+   - **Subscriber:** Add yourself and the other recipients' email addresses
+   - **Subject:** `Weekly Container Activity Report`
+   - **Page:** `Weekly Activity`
+   - **Frequency:** Weekly
+   - **Day:** Friday
+   - **Time:** Pick a time (e.g. 5:00 PM)
+   - **Start date / End date:** Set as needed
+   - **Include preview image:** Yes (embeds a snapshot of the page in the email)
+6. Click **Save and close**
+
+> **Prerequisite:** The dataset must have a **scheduled refresh** so the data is current when the subscription fires. Set this under Dataset settings → Scheduled refresh → add a Friday refresh at least 1 hour before the subscription time.
+
+### Option B: Power Automate (more flexible)
+
+Use this if you want to attach an exported PDF/CSV, customize the email body, or send to external recipients.
+
+1. Go to **flow.microsoft.com** → **Create → Scheduled cloud flow**
+2. **Trigger:** Recurrence — Every 1 Week, on Friday, at e.g. 5:00 PM
+3. **Action 1:** Power BI → **Export to file for Power BI Report**
+   - Workspace: Your workspace
+   - Report: Your published report
+   - Pages: `Weekly Activity` (select by page name)
+   - Export format: PDF (or PNG, PPTX)
+4. **Action 2:** **Send an email (V2)** (Office 365 Outlook connector)
+   - To: Your email + other recipients (semicolon-separated)
+   - Subject: `Weekly Container Activity Report — @{formatDateTime(utcNow(), 'yyyy-MM-dd')}`
+   - Body: Brief summary text + "See attached PDF for full details"
+   - Attachments:
+     - Name: `WeeklyActivity_@{formatDateTime(utcNow(), 'yyyy-MM-dd')}.pdf`
+     - Content: Output from the Export action
+5. **Save** the flow
+6. Test with **Test → Manually** to confirm the email arrives
+
+### Option C: Power Automate with Data Rows (richest)
+
+If you want the actual data rows in the email body (not just a page screenshot):
+
+1. **Trigger:** Recurrence — Weekly, Friday
+2. **Action 1:** Power BI → **Run a query against a dataset**
+   - Use this DAX query:
+   ```dax
+   EVALUATE
+   SELECTCOLUMNS(
+       'WeeklyContainerActivity',
+       "Date", [ActivityDate],
+       "User", [ActivityUser],
+       "Activity", [ActivityType],
+       "Item", [ItemName],
+       "Project", [ProjectName],
+       "Status", [TrackingStatusName],
+       "Container", [ChildContainerName],
+       "Facility", [EffectiveDisplayParentName]
+   )
+   ```
+3. **Action 2:** Create HTML table from the query results
+4. **Action 3:** Send email with the HTML table in the body
+
+---
+
+## Step 9 — Final Checks
 
 ### Verification Checklist
 
@@ -328,10 +500,13 @@ Create 3 separate **Card** visuals, each with one measure in the **Value** well:
 - [ ] Spot-check **PH-051**: should show DisplayStatus = "Not Physically Used Yet", DurationDays = numeric value
 - [ ] Conditional formatting colors render: green (0-30), yellow (31-90), red (90+)
 - [ ] Orange highlight on "Not Physically Used Yet" rows
-- [ ] Slicer sync works across all 3 pages
+- [ ] Slicer sync works across all 4 pages
 - [ ] Duration range slicer on Page 2 filters the matrix correctly
 - [ ] Card KPIs update when slicers are changed
-- [ ] All 3 pages render without errors
+- [ ] All 4 pages render without errors
+- [ ] `WeeklyContainerActivity` query loads with data from the last 7 days
+- [ ] Activity table shows `ActivityType`, `ItemName`, container context
+- [ ] Email subscription delivers on Friday (test with manual trigger first)
 
 ### Performance Notes
 
@@ -362,3 +537,31 @@ Create 3 separate **Card** visuals, each with one measure in the **Value** well:
 | `DisplayStatus` | text (nullable) | Tracking status name or "Not Physically Used Yet" |
 | `DisplayState` | text (nullable) | "X days since creation", "X days in current status", "X days since last child added" |
 | `DurationDays` | number (nullable) | Numeric day count for sorting/filtering |
+| `ParentContainerQrCode` | text (nullable) | QR code URL for the parent container |
+| `ChildContainerQrCode` | text (nullable) | QR code URL for the child container |
+| `PackageQrCode` | text (nullable) | QR code URL for the package |
+
+### WeeklyContainerActivity Columns
+
+| Column | Type | Description |
+|---|---|---|
+| `ActivityDateTime` | datetime | Timestamp of the activity event |
+| `ActivityDate` | date | Date only (for grouping/slicers) |
+| `ActivityDay` | text | Day of week name (Monday, Tuesday, etc.) |
+| `ActivityUser` | text (nullable) | Who performed the action |
+| `ActionName` | text | Raw action name from API |
+| `ActivityType` | text | Friendly label: "Item Added to Container", "Package Status Changed", etc. |
+| `Route` | text | API route that generated the event |
+| `ItemName` | text (nullable) | Name of the package or assembly affected |
+| `ItemType` | text (nullable) | "Package" or "Assembly" |
+| `ProjectName` | text (nullable) | Project display name |
+| `ProjectNumber` | text (nullable) | Project code (e.g. 320001TUR) |
+| `TrackingStatusName` | text (nullable) | New tracking status after the action |
+| `TrackingStatusColor` | text (nullable) | Hex color of the tracking status |
+| `DivisionName` | text (nullable) | Workstation / division that performed the action |
+| `ParentContainerName` | text (nullable) | Parent container (joined from hierarchy) |
+| `ChildContainerName` | text (nullable) | Child container (joined from hierarchy) |
+| `EffectiveDisplayParentName` | text (nullable) | Facility: 180 Campanelli / 6 Ericsson St / Job Site |
+| `ParentContainerQrCode` | text (nullable) | QR code URL for the parent container |
+| `ChildContainerQrCode` | text (nullable) | QR code URL for the child container |
+| `PackageQrCode` | text (nullable) | QR code URL for the package |

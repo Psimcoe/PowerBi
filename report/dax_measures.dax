@@ -167,3 +167,46 @@ SWITCH(
     ISBLANK(_status),                       "#E0E0E0",
     "#0078D4"
 )
+
+// =====================================================================
+//  DAX Measures for Weekly Container Activity Report  (Page 4)
+//  ─────────────────────────────────────────────────────────────
+//  Table name: WeeklyContainerActivity  (the M query output)
+// =====================================================================
+
+// ─── Page 4: Weekly Activity KPIs ───────────────────────────────────
+
+Total Activities This Week =
+COUNTROWS('WeeklyContainerActivity')
+
+Status Changes This Week =
+CALCULATE(
+    COUNTROWS('WeeklyContainerActivity'),
+    'WeeklyContainerActivity'[ActivityType] IN {
+        "Package Status Changed",
+        "Container Status Changed"
+    }
+)
+
+Items Added to Containers This Week =
+CALCULATE(
+    COUNTROWS('WeeklyContainerActivity'),
+    'WeeklyContainerActivity'[ActivityType] = "Item Added to Container"
+)
+
+Unique Users This Week =
+DISTINCTCOUNT('WeeklyContainerActivity'[ActivityUser])
+
+Unique Containers Touched This Week =
+CALCULATE(
+    DISTINCTCOUNT('WeeklyContainerActivity'[ChildContainerName]),
+    'WeeklyContainerActivity'[ChildContainerName] <> BLANK()
+)
+
+// ─── Page 4: Chart support ──────────────────────────────────────────
+
+Activity Count =
+COUNTROWS('WeeklyContainerActivity')
+
+Activities by Day =
+COUNTROWS('WeeklyContainerActivity')
