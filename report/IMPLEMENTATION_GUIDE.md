@@ -346,62 +346,84 @@ Create 3 separate **Card** visuals, each with one measure in the **Value** well:
 
 ## Step 7 — Page 4: Weekly Activity Report
 
-This page powers the **Friday email subscription** — it shows all container and package activity from the past 7 days.
+This page powers the **Friday email subscription** — it shows all container and package activity from the past 7 days. All visuals use **Python script visuals** for a polished, consistent look.
+
+> **Python setup:** File → Options → Python scripting → set your Python home directory. Required packages: `matplotlib`, `seaborn`, `pandas`, `numpy`. Install with `pip install matplotlib seaborn pandas numpy`.
+
+> **Script file:** `report/python_visuals_weekly_activity.py` — contains all 6 scripts (copy each section into its own Python visual).
 
 ### 7a. Create the page
 - Click **+** → rename to `Weekly Activity`
 
-### 7b. KPI Card Row (top, 5 cards)
+### 7b. KPI Summary Cards (Python visual)
 
-| Card | Drag to Value | Format |
-|---|---|---|
-| 1 | `[Total Activities This Week]` | Callout: 28pt, category label "Total Activities" |
-| 2 | `[Status Changes This Week]` | Callout: 28pt, category label "Status Changes" |
-| 3 | `[Items Added to Containers This Week]` | Callout: 28pt, category label "Items Added to Containers" |
-| 4 | `[Unique Users This Week]` | Callout: 28pt, category label "Active Users" |
-| 5 | `[Unique Containers Touched This Week]` | Callout: 28pt, category label "Containers Touched" |
+1. Insert a **Python visual** from the Visualizations pane
+2. Drag into the Values well: `ActivityType`, `ActivityUser`, `ChildContainerName`
+3. Paste **VISUAL 1** from `python_visuals_weekly_activity.py` into the script editor
+4. Click ▶ Run
+5. Size: full width, ~15% height at the top of the page
 
-### 7c. Clustered Bar Chart (left, ~50% width)
+Shows 5 colored KPI cards: Total Activities, Status Changes, Items Added, Active Users, Containers Touched.
 
-- **Axis:** `ActivityDay`
-- **Values:** `[Activity Count]`
-- **Legend:** `ActivityType`
-- Title: "Activity by Day"
-- Sort by `ActivityDate` ascending (click the chart → sort icon → `ActivityDate`)
+### 7c. Activity by Day — Clustered Bar Chart (Python visual)
 
-### 7d. Donut Chart (right, ~25% width)
+1. Insert a **Python visual**
+2. Drag into Values well: `ActivityDate`, `ActivityType`
+3. Paste **VISUAL 2** from the script file
+4. Click ▶ Run
+5. Position: left half, below KPI cards (~50% width)
 
-- **Legend:** `ActivityType`
-- **Values:** `[Activity Count]`
-- Title: "Activity Breakdown"
-- Detail labels: Show category + percentage
+Color-coded bars per activity type for each day of the week.
 
-### 7e. Stacked Bar Chart (right, below donut, ~25% width)
+### 7d. Activity Breakdown — Donut Chart (Python visual)
 
-- **Axis:** `EffectiveDisplayParentName`
-- **Values:** `[Activity Count]`
-- **Legend:** `ActivityType`
-- Title: "Activity by Facility"
-- Data colors: Campanelli `#0078D4`, Ericsson `#00B7C3`, Job Site `#107C10`
+1. Insert a **Python visual**
+2. Drag into Values well: `ActivityType`
+3. Paste **VISUAL 3** from the script file
+4. Click ▶ Run
+5. Position: top-right (~25% width), next to the bar chart
 
-### 7f. Activity Detail Table (bottom, full width)
+Donut with percentage labels per activity type.
+
+### 7e. Activity by Facility — Stacked Horizontal Bar (Python visual)
+
+1. Insert a **Python visual**
+2. Drag into Values well: `EffectiveDisplayParentName`, `ActivityType`
+3. Paste **VISUAL 4** from the script file
+4. Click ▶ Run
+5. Position: right side, below donut (~25% width)
+
+Stacked bars for 180 Campanelli / 6 Ericsson St / Job Site, split by activity type.
+
+### 7f. Activity Detail Table (Python visual)
 
 This table is the core of the email — it shows every individual activity event.
 
-- **Columns (in order):**
-  `ActivityDate`, `ActivityUser`, `ActivityType`, `ItemName`, `ProjectName`,
-  `TrackingStatusName`, `ParentContainerName`, `ChildContainerName`,
-  `EffectiveDisplayParentName`, `ChildContainerQrCode`, `PackageQrCode`
-- Sort: `ActivityDateTime` descending (newest first)
-- Conditional formatting on `ActivityType`:
-  - "Item Added to Container" → Background `#E6F2E6` (light green)
-  - "Container Status Changed" → Background `#E6F0FA` (light blue)
-  - "Package Status Changed" → Background `#FFF4E6` (light orange)
-- Conditional formatting on `TrackingStatusName`:
-  - "Shipped to Jobsite" / "Received on Jobsite" → Background `#107C10`, font white
-  - "Fabrication Complete" → Background `#00B7C3`, font white
+1. Insert a **Python visual**
+2. Drag into Values well: `ActivityDate`, `ActivityUser`, `ActivityType`, `ItemName`, `ProjectName`, `TrackingStatusName`, `ParentContainerName`, `ChildContainerName`, `EffectiveDisplayParentName`, `ChildContainerQrCode`, `PackageQrCode`, `ActivityDateTime`
+3. Paste **VISUAL 5** from the script file
+4. Click ▶ Run
+5. Position: bottom, full width (~50% height)
 
-### 7g. Slicers (top strip)
+Features:
+- Newest events first (sorted by `ActivityDateTime`)
+- Row background colors by activity type (green / blue / orange / purple tint)
+- Shipped/Received status cells highlighted green; Fabrication Complete in teal
+- Shows top 50 events (adjustable in the script: change `.head(50)`)
+
+### 7g. Activity Heatmap — Bonus Visual (Python visual)
+
+1. Insert a **Python visual**
+2. Drag into Values well: `ActivityDate`, `ActivityType`
+3. Paste **VISUAL 6** from the script file
+4. Click ▶ Run
+5. Position: between bar chart and table, or as an overlay
+
+Grid heatmap showing activity density (days × activity types) with cell count annotations.
+
+### 7h. Slicers (top strip)
+
+> **Note:** Slicers remain native Power BI visuals — Python visuals cannot act as slicers. The Python visuals will automatically respond to slicer selections because Power BI filters the `dataset` dataframe before passing it to the script.
 
 | Slicer | Field | Style |
 |---|---|---|
@@ -411,7 +433,7 @@ This table is the core of the email — it shows every individual activity event
 | 4 | `ProjectName` | Dropdown |
 | 5 | `ActivityDate` | Date range (Between) |
 
-### 7h. Sync Slicers
+### 7i. Sync Slicers
 
 - Sync `EffectiveDisplayParentName` across all 4 pages
 
