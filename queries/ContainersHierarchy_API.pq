@@ -144,15 +144,26 @@ let
     //             "Status"  = lifecycle status (Active / Archived)
     _PkgRaw = Table.SelectColumns(Packages, {
         "Id", "Name", "Status", "Status_", "PackageTrackingStatusId",
-        "PackageContainer.1", "PackageContainer.2"
-    }),
+        "PackageContainer.1", "PackageContainer.2",
+        "ProjectName", "Project Name", "projectName"
+    }, MissingField.UseNull),
     // Keep only Active packages
     _PkgActive = Table.SelectRows(_PkgRaw, each [Status] = "Active"),
-    PackagesTable = Table.RenameColumns(
+    PackagesTable0 = Table.RenameColumns(
         _PkgActive,
         {{"Id", "id"}, {"Name", "name"}, {"Status_", "statusName"},
          {"PackageTrackingStatusId", "currentTrackingStatusId"}}
     ),
+    PackagesTable = Table.AddColumn(PackagesTable0, "PackageProjectName", each
+        let
+            p1 = [ProjectName],
+            p2 = [#"Project Name"],
+            p3 = [projectName]
+        in
+            if p1 <> null and Text.Trim(Text.From(p1)) <> "" then Text.From(p1)
+            else if p2 <> null and Text.Trim(Text.From(p2)) <> "" then Text.From(p2)
+            else if p3 <> null and Text.Trim(Text.From(p3)) <> "" then Text.From(p3)
+            else null, type nullable text),
 
     // ─── 2b. Container dates from model ─────────────────────────────
     //  "Containers" table (Synapse) has CreatedDT per container.
@@ -458,7 +469,7 @@ let
         "FinalParentId", "FinalParentName",
         "EffAreaRow", "EffRack", "EffShelf",
         "ChildId", "ChildContainerName", "ChildType",
-        "PkgName", "RowKind", "RelationshipStatus",
+        "PkgName", "PackageProjectName", "RowKind", "RelationshipStatus",
         "DisplayStatus", "DisplayState"
     }),
     PkgRowsRenamed = Table.RenameColumns(PkgRows, {
@@ -512,6 +523,7 @@ let
             ChildContainerName = _NO_CONTAINER,
             ChildContainerType = null,
             PackageName = [name],
+            PackageProjectName = [PackageProjectName],
             RowKind = "UncontainedPackage",
             RelationshipStatus =
                 if [_isJS] then "Status override: Job Site"
@@ -610,6 +622,7 @@ let
             ChildContainerName = [name],
             ChildContainerType = [containerTypeName],
             PackageName = _NO_PKG,
+            PackageProjectName = null,
             RowKind = "ChildNoPackage",
             RelationshipStatus =
                 if [_isJS] then "Status override: Job Site"
@@ -695,6 +708,7 @@ let
             ChildContainerName = _NO_CHILD,
             ChildContainerType = null,
             PackageName = _NO_PKG,
+            PackageProjectName = null,
             RowKind = "ParentEmpty",
             RelationshipStatus =
                 if isJS then "Status override: Job Site"
@@ -806,6 +820,7 @@ let
         {"ChildContainerName",         type text},
         {"ChildContainerType",         type nullable text},
         {"PackageName",                type text},
+        {"PackageProjectName",         type nullable text},
         {"RowKind",                    type text},
         {"RelationshipStatus",         type text},
         {"DisplayStatus",              type nullable text},
