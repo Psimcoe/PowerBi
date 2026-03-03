@@ -241,45 +241,58 @@ if 'ActivityDateTime' in df.columns:
     df['ActivityDateTime'] = pd.to_datetime(df['ActivityDateTime'])
     df = df.sort_values('ActivityDateTime', ascending=False)
 
-# Pick columns to display
+# ── CONFIG ───────────────────────────────────────────────────────────
+MAX_ROWS      = 25        # fewer rows = bigger text; change as needed
+FONT_DATA     = 11        # data cell font size
+FONT_HEADER   = 12        # header font size
+ROW_HEIGHT    = 1.8       # vertical scaling factor per row
+FIG_WIDTH     = 20        # figure width in inches (Power BI stretches to fit)
+
+# ── Select & rename columns ─────────────────────────────────────────
 display_cols = [
     'ActivityDate', 'ActivityUser', 'ActivityType', 'ItemName',
-    'ProjectName', 'TrackingStatusName',
-    'ParentContainerName', 'ChildContainerName',
-    'EffectiveDisplayParentName'
+    'ProjectName', 'TrackingStatusName'
 ]
 display_cols = [c for c in display_cols if c in df.columns]
-df_show = df[display_cols].head(50).copy()
+df_show = df[display_cols].head(MAX_ROWS).copy()
 
-# Shorten column headers
 col_labels = {
-    'ActivityDate': 'Date',
-    'ActivityUser': 'User',
-    'ActivityType': 'Activity',
-    'ItemName': 'Item',
-    'ProjectName': 'Project',
+    'ActivityDate':       'Date',
+    'ActivityUser':       'User',
+    'ActivityType':       'Activity',
+    'ItemName':           'Item',
+    'ProjectName':        'Project',
     'TrackingStatusName': 'Status',
-    'ParentContainerName': 'Parent',
-    'ChildContainerName': 'Child',
-    'EffectiveDisplayParentName': 'Facility',
 }
 df_show = df_show.rename(columns=col_labels)
 
-# Format date
+# Format date column
 if 'Date' in df_show.columns:
     df_show['Date'] = pd.to_datetime(df_show['Date']).dt.strftime('%m/%d')
 
-# Truncate long text
+# Replace "nan" with blank
+df_show = df_show.fillna('')
 for col in df_show.columns:
-    df_show[col] = df_show[col].astype(str).str[:25]
+    df_show[col] = df_show[col].astype(str).replace('nan', '')
+
+# Truncate long text so cells don't overflow
+max_widths = {'Date': 6, 'User': 20, 'Activity': 26, 'Item': 32, 'Project': 22, 'Status': 24}
+for col in df_show.columns:
+    limit = max_widths.get(col, 30)
+    df_show[col] = df_show[col].str[:limit]
 
 nrows, ncols = df_show.shape
-fig_height = max(4, 0.35 * nrows + 1.5)
-fig, ax = plt.subplots(figsize=(16, fig_height))
+fig_height = max(5, 0.45 * nrows + 2)
+fig, ax = plt.subplots(figsize=(FIG_WIDTH, fig_height))
 fig.patch.set_facecolor('white')
 ax.axis('off')
 
-# Row colors by activity type
+# ── Proportional column widths ──────────────────────────────────────
+col_widths = [0.05, 0.14, 0.18, 0.25, 0.18, 0.20]  # must sum to ~1
+if len(col_widths) > ncols:
+    col_widths = col_widths[:ncols]
+
+# ── Row colors by activity type ─────────────────────────────────────
 type_bg = {
     'Package Status Changed':       '#FFF4E6',
     'Container Status Changed':     '#E6F0FA',
@@ -297,42 +310,44 @@ table = ax.table(
     cellText=df_show.values,
     colLabels=df_show.columns,
     cellColours=cell_colors,
+    colWidths=col_widths,
     loc='upper center',
     cellLoc='left'
 )
 
 table.auto_set_font_size(False)
-table.set_fontsize(8)
-table.scale(1, 1.4)
+table.set_fontsize(FONT_DATA)
+table.scale(1, ROW_HEIGHT)
 
-# Style header row
+# ── Style header row ────────────────────────────────────────────────
 for j in range(ncols):
     cell = table[0, j]
     cell.set_facecolor('#0078D4')
-    cell.set_text_props(color='white', fontweight='bold', fontsize=9)
-    cell.set_edgecolor('#DDDDDD')
+    cell.set_text_props(color='white', fontweight='bold', fontsize=FONT_HEADER)
+    cell.set_edgecolor('#CCCCCC')
+    cell.set_height(cell.get_height() * 1.3)
 
-# Style data cells
+# ── Style data cells ────────────────────────────────────────────────
 for i in range(1, nrows + 1):
     for j in range(ncols):
         cell = table[i, j]
-        cell.set_edgecolor('#EEEEEE')
-        cell.set_text_props(fontsize=8, color='#333333')
+        cell.set_edgecolor('#E8E8E8')
+        cell.set_text_props(fontsize=FONT_DATA, color='#333333')
 
-# Highlight shipped/received status
+# ── Highlight shipped/received status cells ─────────────────────────
 if 'Status' in df_show.columns:
     status_idx = list(df_show.columns).index('Status')
     for i, (_, row) in enumerate(df_show.iterrows(), start=1):
         status = str(row.get('Status', ''))
         if status in ('Shipped to Jobsite', 'Received on Jobsite'):
             table[i, status_idx].set_facecolor('#107C10')
-            table[i, status_idx].set_text_props(color='white')
+            table[i, status_idx].set_text_props(color='white', fontweight='bold')
         elif status == 'Fabrication Complete':
             table[i, status_idx].set_facecolor('#00B7C3')
-            table[i, status_idx].set_text_props(color='white')
+            table[i, status_idx].set_text_props(color='white', fontweight='bold')
 
-ax.set_title('Weekly Activity Detail (latest 50 events)', fontsize=14,
-             fontweight='bold', color='#333333', pad=12, loc='left')
+ax.set_title(f'Weekly Activity Detail (latest {min(MAX_ROWS, len(df))} events)',
+             fontsize=16, fontweight='bold', color='#333333', pad=16, loc='left')
 
 plt.tight_layout()
 plt.show()
