@@ -109,6 +109,7 @@ let
             "id", "name", "description", "location",
             "containerTypeName", "parentContainerId",
             "currentTrackingStatusId",
+            "qrCodeUrl",
             "packageIds", "containerIds"
         })),
         type table [
@@ -117,9 +118,23 @@ let
             containerTypeName = nullable text,
             parentContainerId = nullable text,
             currentTrackingStatusId = nullable text,
+            qrCodeUrl = nullable text,
             packageIds = nullable list, containerIds = nullable list
         ]
     ),
+
+    // Container name → QR code lookup (used at the end to enrich rows)
+    ContainerQrLookup = Table.Buffer(
+        Table.SelectColumns(ContainersTable, {"name", "qrCodeUrl"})),
+
+    // Package name → QR code lookup (fetched from API; Synapse doesn't carry qrCodeUrl)
+    RawPackagesForQr  = FetchAllPages("/v1/package", 1000),
+    PackageQrLookup   = Table.Buffer(Table.FromRecords(
+        List.Transform(RawPackagesForQr, each [
+            name      = Record.FieldOrDefault(_, "name", null),
+            qrCodeUrl = Record.FieldOrDefault(_, "qrCodeUrl", null)
+        ]),
+        type table [name = nullable text, qrCodeUrl = nullable text])),
 
     // ─── 2.  Reference existing Packages query ──────────────────────
     //  The model's "Packages" query (from Synapse) already has all
@@ -759,8 +774,27 @@ let
     DR8 = Table.RemoveColumns(DR7,
         {"_durContId", "_cCreated", "_cLastStatus"}),
 
-    // ─── 15. Final typing ───────────────────────────────────────────
-    Typed = Table.TransformColumnTypes(DR8, {
+    // ─── 15. Enrich with QR codes ───────────────────────────────────
+    // Parent container QR
+    QR1 = Table.NestedJoin(DR8, {"ParentContainerName"},
+              ContainerQrLookup, {"name"}, "_pqr", JoinKind.LeftOuter),
+    QR2 = Table.ExpandTableColumn(QR1, "_pqr",
+              {"qrCodeUrl"}, {"ParentContainerQrCode"}),
+
+    // Child container QR
+    QR3 = Table.NestedJoin(QR2, {"ChildContainerName"},
+              ContainerQrLookup, {"name"}, "_cqr", JoinKind.LeftOuter),
+    QR4 = Table.ExpandTableColumn(QR3, "_cqr",
+              {"qrCodeUrl"}, {"ChildContainerQrCode"}),
+
+    // Package QR
+    QR5 = Table.NestedJoin(QR4, {"PackageName"},
+              PackageQrLookup, {"name"}, "_pkqr", JoinKind.LeftOuter),
+    QR6 = Table.ExpandTableColumn(QR5, "_pkqr",
+              {"qrCodeUrl"}, {"PackageQrCode"}),
+
+    // ─── 16. Final typing ───────────────────────────────────────────
+    Typed = Table.TransformColumnTypes(QR6, {
         {"EffectiveDisplayParentId",   type nullable text},
         {"EffectiveDisplayParentName", type text},
         {"ParentContainerId",          type nullable text},
@@ -776,7 +810,10 @@ let
         {"RelationshipStatus",         type text},
         {"DisplayStatus",              type nullable text},
         {"DisplayState",               type nullable text},
-        {"DurationDays",               type nullable number}
+        {"DurationDays",               type nullable number},
+        {"ParentContainerQrCode",      type nullable text},
+        {"ChildContainerQrCode",       type nullable text},
+        {"PackageQrCode",              type nullable text}
     })
 in
     Typed
