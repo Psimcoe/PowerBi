@@ -243,26 +243,31 @@ if 'ActivityDateTime' in df.columns:
 
 # ── CONFIG ───────────────────────────────────────────────────────────
 MAX_ROWS      = 25        # fewer rows = bigger text; change as needed
-FONT_DATA     = 11        # data cell font size
-FONT_HEADER   = 12        # header font size
+FONT_DATA     = 10        # data cell font size
+FONT_HEADER   = 11        # header font size
 ROW_HEIGHT    = 1.8       # vertical scaling factor per row
-FIG_WIDTH     = 20        # figure width in inches (Power BI stretches to fit)
+FIG_WIDTH     = 24        # figure width in inches (Power BI stretches to fit)
 
 # ── Select & rename columns ─────────────────────────────────────────
 display_cols = [
     'ActivityDate', 'ActivityUser', 'ActivityType', 'ItemName',
-    'ProjectName', 'TrackingStatusName'
+    'ProjectName', 'TrackingStatusName',
+    'ParentContainerName', 'ChildContainerName',
+    'EffectiveDisplayParentName'
 ]
 display_cols = [c for c in display_cols if c in df.columns]
 df_show = df[display_cols].head(MAX_ROWS).copy()
 
 col_labels = {
-    'ActivityDate':       'Date',
-    'ActivityUser':       'User',
-    'ActivityType':       'Activity',
-    'ItemName':           'Item',
-    'ProjectName':        'Project',
-    'TrackingStatusName': 'Status',
+    'ActivityDate':              'Date',
+    'ActivityUser':              'User',
+    'ActivityType':              'Activity',
+    'ItemName':                  'Item',
+    'ProjectName':               'Project',
+    'TrackingStatusName':        'Status',
+    'ParentContainerName':       'Parent',
+    'ChildContainerName':        'Child',
+    'EffectiveDisplayParentName':'Facility',
 }
 df_show = df_show.rename(columns=col_labels)
 
@@ -276,9 +281,10 @@ for col in df_show.columns:
     df_show[col] = df_show[col].astype(str).replace('nan', '')
 
 # Truncate long text so cells don't overflow
-max_widths = {'Date': 6, 'User': 20, 'Activity': 26, 'Item': 32, 'Project': 22, 'Status': 24}
+max_widths = {'Date': 6, 'User': 16, 'Activity': 22, 'Item': 28,
+              'Project': 18, 'Status': 20, 'Parent': 18, 'Child': 18, 'Facility': 16}
 for col in df_show.columns:
-    limit = max_widths.get(col, 30)
+    limit = max_widths.get(col, 20)
     df_show[col] = df_show[col].str[:limit]
 
 nrows, ncols = df_show.shape
@@ -288,7 +294,7 @@ fig.patch.set_facecolor('white')
 ax.axis('off')
 
 # ── Proportional column widths ──────────────────────────────────────
-col_widths = [0.05, 0.14, 0.18, 0.25, 0.18, 0.20]  # must sum to ~1
+col_widths = [0.04, 0.10, 0.14, 0.18, 0.12, 0.12, 0.11, 0.11, 0.08]
 if len(col_widths) > ncols:
     col_widths = col_widths[:ncols]
 
